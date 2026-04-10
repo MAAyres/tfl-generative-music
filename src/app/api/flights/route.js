@@ -8,8 +8,10 @@ export async function GET() {
     // Bounding box around London: lat 51.3-51.7, lon -0.5 to 0.3
     const url = 'https://opensky-network.org/api/states/all?lamin=51.3&lomin=-0.5&lamax=51.7&lomax=0.3';
     const response = await fetch(url, { cache: 'no-store' });
+    console.log(`OpenSky API Status: ${response.status} ${response.statusText}`);
 
     if (!response.ok) {
+      console.warn("OpenSky API non-OK response, returning empty safe data.");
       // OpenSky can be rate-limited, gracefully degrade
       return NextResponse.json({
         success: true,
@@ -18,6 +20,7 @@ export async function GET() {
     }
 
     const data = await response.json();
+    console.log(`OpenSky Data: Found ${data?.states?.length || 0} total aircraft in area.`);
     const states = data.states || [];
 
     // Each state: [icao24, callsign, origin_country, time_position, last_contact,

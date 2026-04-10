@@ -29,6 +29,7 @@ export default function Home() {
   const [stockData, setStockData] = useState(null);
   const [riverData, setRiverData] = useState(null);
   const [flightData, setFlightData] = useState(null);
+  const [flightStatus, setFlightStatus] = useState('idle');
   const [activeEvents, setActiveEvents] = useState([]);
   const [apiStatus, setApiStatus] = useState('idle');
   const [errorMsg, setErrorMsg] = useState('');
@@ -74,15 +75,13 @@ export default function Home() {
       } else { setApiStatus('error'); setErrorMsg(tData.error || 'Unknown'); }
     } catch (err) { setApiStatus('error'); setErrorMsg(err.message); }
 
+    // Flights: Now every cycle (5s) for better responsiveness and debugging
+    fetchFlightData();
+
     // Slow data: every 6th cycle (~30s)
     slowPollCounter.current++;
     if (slowPollCounter.current % 6 === 1) {
       fetchSlowData();
-    }
-
-    // Flight twinkles: every 3rd cycle (~15s)
-    if (slowPollCounter.current % 3 === 0) {
-      fetchFlightData();
     }
   };
 
@@ -96,13 +95,21 @@ export default function Home() {
 
   const fetchFlightData = async () => {
     try {
+      setFlightStatus('loading');
       const r = await fetch("/api/flights");
       const d = await r.json();
-      if (d.success) {
+      console.log("Flight Data Update:", d);
+      if (d.success && d.data.available) {
         setFlightData(d.data);
+        setFlightStatus('ok');
         triggerFlightTwinkles(d.data);
+      } else {
+        setFlightStatus(d.data.available === false ? 'limited' : 'error');
       }
-    } catch (e) {}
+    } catch (e) {
+      console.error("Flight fetch fail:", e);
+      setFlightStatus('error');
+    }
   };
 
   const scheduleNotesFromData = (arrivalsByLine) => {
@@ -189,8 +196,15 @@ export default function Home() {
             {riverData?.level != null && (
               <div className="data-chip">🌊 {riverData.level}m <span>→ Sub Drone</span></div>
             )}
-            {flightData?.available && (
-              <div className="data-chip">✈️ {flightData.count} flights <span>→ Twinkle</span></div>
+            {flightData?.available !== undefined && (
+              <div className="data-chip" style={{
+                color: flightStatus === 'ok' ? '#b0f2ff' : flightStatus === 'limited' ? '#ff9f43' : flightStatus === 'loading' ? '#aaa' : '#ff6b6b'
+              }}>
+                ✈️ {flightStatus === 'loading' ? 'Scanning Skies...' : 
+                    flightStatus === 'ok' ? `${flightData.count} flights` : 
+                    flightStatus === 'limited' ? 'API Limited' : 'Link Failed'}
+                <span>→ Twinkle {flightStatus === 'loading' && '...'}</span>
+              </div>
             )}
           </div>
         </div>

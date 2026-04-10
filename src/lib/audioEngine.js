@@ -89,7 +89,7 @@ export async function initAudio() {
     filter: { type: "lowpass", frequency: 150, Q: 1 },
     envelope: { attack: 4, decay: 2, sustain: 1, release: 6 },
     filterEnvelope: { attack: 4, decay: 1, sustain: 0.8, release: 6, baseFrequency: 80, octaves: 1 },
-    volume: -12,
+    volume: -8, // Boosted even more
   }).connect(masterReverb);
   // Start the drone at C2 (approx 65Hz) instead of C1 for better audibility
   riverDrone.triggerAttack("C2", Tone.now());
@@ -98,10 +98,10 @@ export async function initAudio() {
   // ── Twinkle Synth: high crystalline for flights ──
   twinkleSynth = new Tone.PolySynth(Tone.Synth, {
     oscillator: { type: "sine" },
-    envelope: { attack: 0.05, decay: 1.2, sustain: 0, release: 2.0 },
-    volume: -10,
+    envelope: { attack: 0.1, decay: 1.5, sustain: 0, release: 3.0 }, // Slower attack, longer tail
+    volume: -6, // Boosted significantly
   });
-  const twinkleDelay = new Tone.PingPongDelay({ delayTime: "8n", feedback: 0.4, wet: 0.5 });
+  const twinkleDelay = new Tone.PingPongDelay({ delayTime: "8n", feedback: 0.5, wet: 0.6 });
   twinkleSynth.chain(twinkleDelay, masterReverb);
   console.log("Twinkle synth ready");
 
@@ -345,29 +345,32 @@ export function applyRiverModulation(riverData) {
 }
 
 // ── Flight Data → High twinkling notes ──
-// Each visible flight triggers a high crystalline note
-// Altitude maps to pitch, velocity to note duration
 export function triggerFlightTwinkles(flightData) {
   if (!isInitialized || !twinkleSynth) return;
   const { flights, available } = flightData;
-  if (!available || flights.length === 0) return;
+  if (!available || !flights || flights.length === 0) {
+    console.log("Flights: no data to trigger");
+    return;
+  }
 
-  // Pick up to 5 flights per cycle, stagger them
-  const selected = flights.slice(0, 5);
+  // Pick up to 8 flights per cycle, stagger them
+  const selected = flights.slice(0, 8);
   selected.forEach((flight, i) => {
+    // Stagger across the 5 second interval
+    const delay = i * 400 + Math.random() * 600;
     setTimeout(() => {
       // Map altitude (500-12000m) to note index in the twinkle scale
       const alt = flight.altitude || 3000;
       const noteIdx = Math.floor((alt / 12000) * (TWINKLE_NOTES.length - 1));
-      const note = TWINKLE_NOTES[Math.min(noteIdx, TWINKLE_NOTES.length - 1)];
+      const note = TWINKLE_NOTES[Math.max(0, Math.min(noteIdx, TWINKLE_NOTES.length - 1))];
 
       // Map velocity (50-250 m/s) to duration
       const vel = flight.velocity || 100;
-      const duration = vel > 200 ? "32n" : vel > 100 ? "16n" : "8n";
+      const duration = vel > 220 ? "16n" : vel > 120 ? "8n" : "4n";
 
-      const velocity = 0.2 + Math.random() * 0.4; // keep twinkles delicate
+      const velocity = 0.4 + Math.random() * 0.5; // Boosted twinkle velocity
       twinkleSynth.triggerAttackRelease(note, duration, Tone.now(), velocity);
-    }, i * 600 + Math.random() * 400); // stagger across ~3-4 seconds
+    }, delay);
   });
 }
 

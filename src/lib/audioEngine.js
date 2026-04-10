@@ -86,6 +86,43 @@ function setupLineInstruments() {
     volume: -14,
     envelope: { attack: 0.2, release: 2 }
   }).connect(globalFilter);
+
+  instruments["district"] = new Tone.PolySynth(Tone.Synth, {
+    oscillator: { type: "triangle" },
+    volume: -12,
+    envelope: { attack: 0.3, decay: 1.5, sustain: 0.4, release: 3 }
+  }).connect(globalFilter);
+
+  instruments["circle"] = new Tone.PolySynth(Tone.FMSynth, {
+    harmonicity: 3,
+    modulationIndex: 1,
+    volume: -14,
+    envelope: { attack: 0.15, decay: 1, sustain: 0.3, release: 2 }
+  }).connect(globalFilter);
+
+  instruments["metropolitan"] = new Tone.PolySynth(Tone.AMSynth, {
+    volume: -12,
+    envelope: { attack: 0.4, decay: 2, sustain: 0.6, release: 3 }
+  }).connect(globalFilter);
+
+  instruments["hammersmith-city"] = new Tone.PolySynth(Tone.Synth, {
+    oscillator: { type: "sine" },
+    volume: -15,
+    envelope: { attack: 0.5, decay: 2, sustain: 0.5, release: 4 }
+  }).connect(globalFilter);
+
+  instruments["waterloo-city"] = new Tone.PolySynth(Tone.Synth, {
+    oscillator: { type: "triangle4" },
+    volume: -16,
+    envelope: { attack: 0.1, decay: 0.5, sustain: 0.2, release: 1 }
+  }).connect(globalFilter);
+
+  instruments["elizabeth"] = new Tone.PolySynth(Tone.FMSynth, {
+    harmonicity: 2,
+    modulationIndex: 3,
+    volume: -11,
+    envelope: { attack: 0.08, decay: 1.5, sustain: 0.3, release: 2.5 }
+  }).connect(globalFilter);
 }
 
 // Control function for manual UI volume adjustments

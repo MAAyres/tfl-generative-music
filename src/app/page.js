@@ -1,86 +1,80 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import dynamic from 'next/dynamic';
+
+// Leaflet must be loaded client-side only (no SSR)
+const MapComponent = dynamic(() => import('./MapComponent'), { ssr: false });
+
 import { initAudio, applyWeatherModulation, triggerArrivalPoint, setLineVolume } from "@/lib/audioEngine";
 import { motion, AnimatePresence } from "framer-motion";
-import MapVisualizer from "./MapVisualizer";
 
 export default function Home() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [weatherData, setWeatherData] = useState(null);
   const [activeEvents, setActiveEvents] = useState([]);
-  const [mapZoom, setMapZoom] = useState(1.0);
-  
-  // A ref to keep track of triggered arrivals to prevent double-firing
-  const processedArrivals = useRef(new Set());
+  const [apiStatus, setApiStatus] = useState('idle'); // idle | ok | error
+  const [errorMsg, setErrorMsg] = useState('');
 
-  // Polling intervals
-  const TFL_POLL_MS = 15000; // Poll TFL every 15s to respect 500/min limits natively
-  const WEATHER_POLL_MS = 60000; // Weather changes slower, poll every 60s
+  const processedArrivals = useRef(new Set());
+  const TFL_POLL_MS = 15000;
 
   const toggleAudio = async () => {
     if (!isPlaying) {
       await initAudio();
       setIsPlaying(true);
-      fetchData(); // Initial immediate fetch
-    } else {
-      // In Tone.js stopping requires context suspension or transport stop.
-      // We could suspend here, but for simplicity we'll just toggle UI.
+      fetchData();
     }
   };
 
   const fetchData = async () => {
-    // Weather fetch
+    // Weather
     try {
       const wRes = await fetch("/api/weather");
       const wData = await wRes.json();
       if (wData.success) {
         setWeatherData(wData.data);
-        if (isPlaying) {
-          applyWeatherModulation(wData.data);
-        }
+        applyWeatherModulation(wData.data);
       }
     } catch (err) {
-      console.error("Failed weather:", err);
+      console.error("Weather fetch error:", err);
     }
 
-    // TFL fetch
+    // TFL
     try {
       const tRes = await fetch("/api/tfl");
       const tData = await tRes.json();
-      if (tData.success && isPlaying) {
+      if (tData.success) {
+        setApiStatus('ok');
+        setErrorMsg('');
         processTFLData(tData.data);
-      } else if (!tData.success && isPlaying) {
-        setActiveEvents(prev => [{id: Math.random(), lineId: 'central', stationName: `TFL API Error: ${tData.error || 'Check API Key'}`}, ...prev].slice(0, 10));
+      } else {
+        setApiStatus('error');
+        setErrorMsg(tData.error || 'Unknown error');
       }
     } catch (err) {
-      console.error("Failed TFL:", err);
-      if (isPlaying) {
-        setActiveEvents(prev => [{id: Math.random(), lineId: 'northern', stationName: 'Network fetch failed.'}, ...prev].slice(0, 10));
-      }
+      console.error("TFL fetch error:", err);
+      setApiStatus('error');
+      setErrorMsg(err.message);
     }
   };
 
   const processTFLData = (arrivalsByLine) => {
-    // Evaluate arrivals and trigger audio for those very close.
-    // 'timeToStation' is in seconds. Let's trigger if it's < 60s.
     const newEvents = [];
-    
+
     Object.keys(arrivalsByLine).forEach(lineId => {
       arrivalsByLine[lineId].forEach(arrival => {
-        // Expand the capture window to 300 seconds (5 minutes) so that trains frequently
-        // hit our queue even during quiet hours or low traffic API polling, preventing the system from going dead.
         if (arrival.timeToStation < 300) {
           if (!processedArrivals.current.has(arrival.id)) {
-            // New imminent arrival! Trigger the audio.
             triggerArrivalPoint(lineId, arrival.stationId);
             processedArrivals.current.add(arrival.id);
-            
+
             newEvents.push({
               id: arrival.id,
               lineId,
               stationName: arrival.stationName,
-              direction: arrival.direction || "Unknown",
+              towards: arrival.towards || "",
+              timeToStation: arrival.timeToStation,
               timestamp: Date.now()
             });
           }
@@ -89,113 +83,108 @@ export default function Home() {
     });
 
     if (newEvents.length > 0) {
-      setActiveEvents(prev => [...newEvents, ...prev].slice(0, 10)); // Keep last 10 in UI
+      setActiveEvents(prev => [...newEvents, ...prev].slice(0, 15));
     }
-    
-    // Clear old processed arrivals casually to prevent memory leak
-    if (processedArrivals.current.size > 2000) {
+
+    // Prevent memory leak
+    if (processedArrivals.current.size > 5000) {
       processedArrivals.current.clear();
     }
   };
 
   useEffect(() => {
     if (!isPlaying) return;
-    
-    const tflInterval = setInterval(() => {
-      fetchData();
-    }, TFL_POLL_MS);
-
-    return () => clearInterval(tflInterval);
+    const interval = setInterval(fetchData, TFL_POLL_MS);
+    return () => clearInterval(interval);
   }, [isPlaying]);
 
   return (
     <main className="map-container">
-      <MapVisualizer activeEvents={activeEvents} zoomLevel={mapZoom} />
+      <MapComponent activeEvents={activeEvents} />
 
       <div className="control-panel">
         <div>
-          <button 
-            className={`glow-btn ${isPlaying ? 'active' : ''}`} 
+          <button
+            className={`glow-btn ${isPlaying ? 'active' : ''}`}
             onClick={toggleAudio}
           >
             {isPlaying ? 'System Active' : 'Start Integration'}
           </button>
-          {!isPlaying && <p style={{fontSize: '11px', color: '#889', textAlign: 'center'}}>Click to initialize Web Audio</p>}
+          {!isPlaying && <p style={{fontSize:'11px',color:'#889',textAlign:'center'}}>Click to initialize Web Audio</p>}
         </div>
+
+        {/* API Status */}
+        {apiStatus === 'error' && (
+          <div style={{background:'rgba(220,36,31,0.15)',border:'1px solid rgba(220,36,31,0.4)',borderRadius:'8px',padding:'10px',fontSize:'11px',color:'#ff6b6b'}}>
+            <strong>TFL API Error:</strong> {errorMsg}
+          </div>
+        )}
+        {apiStatus === 'ok' && (
+          <div style={{background:'rgba(0,120,42,0.15)',border:'1px solid rgba(0,120,42,0.4)',borderRadius:'8px',padding:'10px',fontSize:'11px',color:'#6bff7b'}}>
+            ✓ TFL Data Streaming
+          </div>
+        )}
 
         {weatherData && (
           <>
             <div className="metric">
-              <span className="metric-label">Temp (Tempo)</span>
+              <span className="metric-label">Temp → Tempo</span>
               <span className="metric-value">{weatherData.temperature}°C</span>
             </div>
             <div className="metric">
-              <span className="metric-label">Wind (Filter)</span>
+              <span className="metric-label">Wind → Filter</span>
               <span className="metric-value">{weatherData.windSpeed} km/h</span>
             </div>
             <div className="metric">
-              <span className="metric-label">Humidity (Reverb)</span>
+              <span className="metric-label">Humidity → Reverb</span>
               <span className="metric-value">{weatherData.humidity}%</span>
             </div>
           </>
         )}
 
-        <div style={{ marginTop: '10px' }}>
-          <h4 style={{ color: '#fff', fontSize: '13px', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '8px', margin: '0 0 12px 0' }}>Map View</h4>
-          <div style={{ display: 'flex', alignItems: 'center', marginBottom: '8px', fontSize: '11px' }}>
-              <span style={{ width: '60px', color: '#eee' }}>Zoom</span>
-              <input 
-                type="range" 
-                min="0.5" max="3" step="0.1" value={mapZoom}
-                onChange={(e) => setMapZoom(parseFloat(e.target.value))}
-                style={{ flex: 1, accentColor: `#FFF` }}
-              />
-          </div>
-        </div>
-
-        <div style={{ marginTop: '10px' }}>
-          <h4 style={{ color: '#fff', fontSize: '13px', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '8px', margin: '0 0 12px 0' }}>Line Volumes</h4>
-          {['victoria', 'jubilee', 'northern', 'piccadilly', 'central', 'bakerloo'].map(line => (
-            <div key={line} style={{ display: 'flex', alignItems: 'center', marginBottom: '8px', fontSize: '11px' }}>
-              <span style={{ width: '60px', color: `var(--${line})`, textTransform: 'capitalize' }}>{line}</span>
-              <input 
-                type="range" 
+        <div style={{marginTop:'10px'}}>
+          <h4 style={{color:'#fff',fontSize:'13px',borderBottom:'1px solid rgba(255,255,255,0.1)',paddingBottom:'8px',margin:'0 0 12px 0'}}>Line Volumes</h4>
+          {['victoria','jubilee','northern','piccadilly','central','bakerloo','district','circle','metropolitan','hammersmith-city'].map(line => (
+            <div key={line} style={{display:'flex',alignItems:'center',marginBottom:'6px',fontSize:'11px'}}>
+              <span style={{width:'70px',color:`var(--${line})`,textTransform:'capitalize',fontSize:'10px'}}>{line.replace('-',' ')}</span>
+              <input
+                type="range"
                 min="-60" max="0" defaultValue="-10"
                 onChange={(e) => setLineVolume(line, parseFloat(e.target.value))}
-                style={{ flex: 1, accentColor: `var(--${line})` }}
-                aria-label={`${line} volume`}
+                style={{flex:1,accentColor:`var(--${line})`}}
               />
             </div>
           ))}
         </div>
 
-        <div style={{ marginTop: '10px' }}>
-          <h4 style={{ color: '#fff', fontSize: '13px', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '8px', margin: '0 0 12px 0' }}>Live Events</h4>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '180px', overflowY: 'auto' }}>
+        <div style={{marginTop:'10px'}}>
+          <h4 style={{color:'#fff',fontSize:'13px',borderBottom:'1px solid rgba(255,255,255,0.1)',paddingBottom:'8px',margin:'0 0 12px 0'}}>Live Events</h4>
+          <div style={{display:'flex',flexDirection:'column',gap:'6px',maxHeight:'150px',overflowY:'auto'}}>
             <AnimatePresence>
               {activeEvents.map(ev => (
-                <motion.div 
+                <motion.div
                   key={ev.id}
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0 }}
-                  style={{ 
-                    fontSize: '11px',
-                    background: 'rgba(255,255,255,0.05)',
-                    padding: '8px',
-                    borderRadius: '6px',
-                    borderLeft: `3px solid var(--${ev.lineId})`
+                  initial={{opacity:0,x:20}}
+                  animate={{opacity:1,x:0}}
+                  exit={{opacity:0}}
+                  style={{
+                    fontSize:'10px',
+                    background:'rgba(255,255,255,0.05)',
+                    padding:'8px',
+                    borderRadius:'6px',
+                    borderLeft:`3px solid var(--${ev.lineId})`
                   }}
                 >
-                  <strong style={{ display: 'block', color: `var(--${ev.lineId})`, marginBottom:'4px' }}>
-                    {ev.lineId.toUpperCase()}
+                  <strong style={{display:'block',color:`var(--${ev.lineId})`,marginBottom:'2px',textTransform:'capitalize'}}>
+                    {ev.lineId.replace('-',' ')}
                   </strong>
-                  <span style={{ color: '#eee'}}>{ev.stationName}</span>
+                  <span style={{color:'#eee'}}>{ev.stationName}</span>
+                  <span style={{color:'#889',marginLeft:'8px'}}>{Math.round(ev.timeToStation)}s</span>
                 </motion.div>
               ))}
             </AnimatePresence>
-            {activeEvents.length === 0 && isPlaying && (
-              <span style={{ fontSize: '12px', color: '#889' }}>Waiting for train events...</span>
+            {activeEvents.length === 0 && isPlaying && apiStatus !== 'error' && (
+              <span style={{fontSize:'12px',color:'#889'}}>Waiting for train events...</span>
             )}
           </div>
         </div>

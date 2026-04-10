@@ -1,15 +1,22 @@
 :root {
   --victoria: #0098D4;
   --jubilee: #868F98;
-  --northern: #FFFFFF; /* Enhanced for dark mode */
+  --northern: #FFFFFF;
   --piccadilly: #003688;
   --central: #DC241F;
   --bakerloo: #B26300;
+  --district: #00782A;
+  --circle: #FFD329;
+  --metropolitan: #9B0058;
+  --hammersmith-city: #F3A9BB;
+  --waterloo-city: #95CDBA;
+  --elizabeth: #6950A1;
   
   --bg-dark: #07070b;
   --text-main: #f0f0f5;
   --text-muted: #888899;
 }
+
 
 * {
   box-sizing: border-box;
@@ -47,11 +54,14 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 16px;
   padding: 24px;
-  z-index: 100;
+  z-index: 1000;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
   display: flex;
   flex-direction: column;
   gap: 20px;
+  pointer-events: auto;
+  max-height: 90vh;
+  overflow-y: auto;
 }
 
 .metric {
@@ -108,3 +118,20 @@ body {
   box-shadow: 0 0 30px rgba(0, 152, 212, 0.3);
   color: var(--victoria);
 }
+
+.station-tooltip {
+  background: rgba(15, 15, 25, 0.9) !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  color: #fff !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  padding: 4px 8px !important;
+  border-radius: 4px !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5) !important;
+}
+
+.station-tooltip::before {
+  border-top-color: rgba(255,255,255,0.2) !important;
+}
+
+

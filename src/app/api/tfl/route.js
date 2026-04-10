@@ -2,51 +2,79 @@ import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
+// All London Tube line IDs as recognized by the TFL API
+const TUBE_LINES = [
+  'victoria', 'central', 'northern', 'piccadilly', 'jubilee',
+  'bakerloo', 'district', 'circle', 'metropolitan',
+  'hammersmith-city', 'waterloo-city', 'elizabeth'
+];
+
 export async function GET() {
   try {
-    // Determine the API Key from Environment, but provide a fallback if it isn't set yet.
-    // The user mentioned they have a key limiting to 500 req/min.
     const TFL_APP_KEY = process.env.TFL_APP_KEY;
     
-    // We fetch arrival predictions for all tube lines.
-    // The query string appends the API key if it's available.
-    const baseUrl = 'https://api.tfl.gov.uk/Line/Mode/tube/Arrivals';
-    const url = TFL_APP_KEY ? `${baseUrl}?app_key=${TFL_APP_KEY}` : baseUrl;
+    if (!TFL_APP_KEY) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'TFL_APP_KEY is not set. Add it to .env.local or Vercel Environment Variables.' 
+      }, { status: 500 });
+    }
+
+    // The correct TFL endpoint is /Line/{comma-separated-ids}/Arrivals
+    const lineIds = TUBE_LINES.join(',');
+    const url = `https://api.tfl.gov.uk/Line/${lineIds}/Arrivals?app_key=${TFL_APP_KEY}`;
 
     const response = await fetch(url, {
       method: "GET",
-      // Set headers to respect standard cache limits
-      headers: {
-        "Cache-Control": "no-cache",
-      }
+      headers: { "Cache-Control": "no-cache" },
+      // Prevent Next.js from caching the fetch itself
+      cache: 'no-store',
     });
 
     if (!response.ok) {
-      throw new Error(`TFL API error: ${response.status}`);
+      const errorText = await response.text();
+      console.error("TFL API returned:", response.status, errorText);
+      return NextResponse.json({ 
+        success: false, 
+        error: `TFL API returned status ${response.status}` 
+      }, { status: response.status });
     }
 
     const data = await response.json();
 
-    // The payload is often quite large, containing arrivals for all stations across all lines.
-    // We return it cleanly mapped to group by lineId.
+    // Group arrivals by lineId
     const arrivalsByLine = {};
     data.forEach(arrival => {
-      if (!arrivalsByLine[arrival.lineId]) {
-        arrivalsByLine[arrival.lineId] = [];
+      const lineId = arrival.lineId;
+      if (!arrivalsByLine[lineId]) {
+        arrivalsByLine[lineId] = [];
       }
-      // For the audio trigger, we are primarily interested in when the 'timeToStation' implies an immediate arrival.
-      arrivalsByLine[arrival.lineId].push({
+      arrivalsByLine[lineId].push({
         id: arrival.id,
         stationId: arrival.naptanId,
         stationName: arrival.stationName,
+        lineName: arrival.lineName,
         timeToStation: arrival.timeToStation,
-        direction: arrival.direction,
+        towards: arrival.towards,
+        expectedArrival: arrival.expectedArrival,
       });
     });
 
-    return NextResponse.json({ success: true, data: arrivalsByLine });
+    // Sort each line's arrivals by timeToStation
+    Object.keys(arrivalsByLine).forEach(lineId => {
+      arrivalsByLine[lineId].sort((a, b) => a.timeToStation - b.timeToStation);
+    });
+
+    return NextResponse.json({ 
+      success: true, 
+      data: arrivalsByLine,
+      totalArrivals: data.length,
+    });
   } catch (error) {
     console.error("Error fetching TFL Data:", error);
-    return NextResponse.json({ success: false, error: 'Failed to fetch TFL data' }, { status: 500 });
+    return NextResponse.json({ 
+      success: false, 
+      error: `Server error: ${error.message}` 
+    }, { status: 500 });
   }
 }

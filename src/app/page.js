@@ -10,6 +10,7 @@ import {
   setScale, getScaleNames, toggleMuteLine,
   toggleDrums, setDrumVolume, updateDrumPattern,
   applyTrafficModulation, applyAirQualityModulation, applyStockModulation,
+  applyRiverModulation, triggerFlightTwinkles,
 } from "@/lib/audioEngine";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -26,6 +27,8 @@ export default function Home() {
   const [trafficData, setTrafficData] = useState(null);
   const [airData, setAirData] = useState(null);
   const [stockData, setStockData] = useState(null);
+  const [riverData, setRiverData] = useState(null);
+  const [flightData, setFlightData] = useState(null);
   const [activeEvents, setActiveEvents] = useState([]);
   const [apiStatus, setApiStatus] = useState('idle');
   const [errorMsg, setErrorMsg] = useState('');
@@ -56,9 +59,8 @@ export default function Home() {
     setLineMutes(prev => ({ ...prev, [lineId]: isMuted }));
   };
 
-  // Fetch TFL arrivals every 5s, but slower data (weather/traffic/air/stocks) every 30s
   const fetchAllData = async () => {
-    // Always fetch TFL arrivals
+    // TFL arrivals (every 5s)
     try {
       const tRes = await fetch("/api/tfl");
       const tData = await tRes.json();
@@ -67,55 +69,48 @@ export default function Home() {
         const total = tData.totalArrivals || 0;
         setTotalArrivals(total);
         scheduleNotesFromData(tData.data);
-        if (weatherData) updateDrumPattern(total, weatherData.windSpeed, weatherData.humidity);
-        else updateDrumPattern(total, 10, 50);
+        if (weatherData) updateDrumPattern(total, weatherData.windSpeed);
+        else updateDrumPattern(total, 10);
       } else { setApiStatus('error'); setErrorMsg(tData.error || 'Unknown'); }
     } catch (err) { setApiStatus('error'); setErrorMsg(err.message); }
 
-    // Slow-polled data: every 6th cycle ≈ 30 seconds
+    // Slow data: every 6th cycle (~30s)
     slowPollCounter.current++;
     if (slowPollCounter.current % 6 === 1) {
       fetchSlowData();
     }
+
+    // Flight twinkles: every 3rd cycle (~15s)
+    if (slowPollCounter.current % 3 === 0) {
+      fetchFlightData();
+    }
   };
 
   const fetchSlowData = async () => {
-    // Weather
-    try {
-      const r = await fetch("/api/weather");
-      const d = await r.json();
-      if (d.success) { setWeatherData(d.data); applyWeatherModulation(d.data); }
-    } catch (e) {}
+    try { const r = await fetch("/api/weather"); const d = await r.json(); if (d.success) { setWeatherData(d.data); applyWeatherModulation(d.data); } } catch (e) {}
+    try { const r = await fetch("/api/traffic"); const d = await r.json(); if (d.success) { setTrafficData(d.data); applyTrafficModulation(d.data); } } catch (e) {}
+    try { const r = await fetch("/api/airquality"); const d = await r.json(); if (d.success) { setAirData(d.data); applyAirQualityModulation(d.data); } } catch (e) {}
+    try { const r = await fetch("/api/stocks"); const d = await r.json(); if (d.success) { setStockData(d.data); applyStockModulation(d.data); } } catch (e) {}
+    try { const r = await fetch("/api/river"); const d = await r.json(); if (d.success) { setRiverData(d.data); applyRiverModulation(d.data); } } catch (e) {}
+  };
 
-    // Traffic
+  const fetchFlightData = async () => {
     try {
-      const r = await fetch("/api/traffic");
+      const r = await fetch("/api/flights");
       const d = await r.json();
-      if (d.success) { setTrafficData(d.data); applyTrafficModulation(d.data); }
-    } catch (e) {}
-
-    // Air Quality
-    try {
-      const r = await fetch("/api/airquality");
-      const d = await r.json();
-      if (d.success) { setAirData(d.data); applyAirQualityModulation(d.data); }
-    } catch (e) {}
-
-    // FTSE100
-    try {
-      const r = await fetch("/api/stocks");
-      const d = await r.json();
-      if (d.success) { setStockData(d.data); applyStockModulation(d.data); }
+      if (d.success) {
+        setFlightData(d.data);
+        triggerFlightTwinkles(d.data);
+      }
     } catch (e) {}
   };
 
   const scheduleNotesFromData = (arrivalsByLine) => {
     scheduledTimeouts.current.forEach(t => clearTimeout(t));
     scheduledTimeouts.current = [];
-    const linesWithArrivals = Object.keys(arrivalsByLine);
     let globalIndex = 0;
 
-    linesWithArrivals.forEach(lineId => {
+    Object.keys(arrivalsByLine).forEach(lineId => {
       const closest = arrivalsByLine[lineId].slice(0, 2);
       closest.forEach((arrival, i) => {
         const delay = (globalIndex * 350) + (i * 200) + Math.random() * 300;
@@ -147,7 +142,7 @@ export default function Home() {
   }, []);
 
   const sectionHeader = (title) => (
-    <h4 style={{color:'#fff',fontSize:'12px',borderBottom:'1px solid rgba(255,255,255,0.08)',paddingBottom:'6px',margin:'0 0 8px 0',letterSpacing:'0.5px',textTransform:'uppercase',fontWeight:700}}>{title}</h4>
+    <h4 style={{color:'#fff',fontSize:'11px',borderBottom:'1px solid rgba(255,255,255,0.08)',paddingBottom:'5px',margin:'0 0 8px 0',letterSpacing:'0.5px',textTransform:'uppercase',fontWeight:700}}>{title}</h4>
   );
 
   return (
@@ -160,42 +155,47 @@ export default function Home() {
         </button>
 
         {apiStatus === 'error' && (
-          <div style={{background:'rgba(220,36,31,0.15)',border:'1px solid rgba(220,36,31,0.4)',borderRadius:'6px',padding:'8px',fontSize:'10px',color:'#ff6b6b'}}>
+          <div style={{background:'rgba(220,36,31,0.15)',border:'1px solid rgba(220,36,31,0.4)',borderRadius:'6px',padding:'6px 8px',fontSize:'10px',color:'#ff6b6b'}}>
             <strong>API Error:</strong> {errorMsg}
           </div>
         )}
         {apiStatus === 'ok' && (
-          <div style={{background:'rgba(0,120,42,0.1)',borderRadius:'6px',padding:'6px 8px',fontSize:'10px',color:'#6bff7b'}}>
-            ✓ {totalArrivals} train predictions streaming
+          <div style={{background:'rgba(0,120,42,0.1)',borderRadius:'6px',padding:'5px 8px',fontSize:'10px',color:'#6bff7b'}}>
+            ✓ {totalArrivals} trains
           </div>
         )}
 
-        {/* ── Data Feeds ── */}
+        {/* Data Feeds */}
         <div>
-          {sectionHeader('Live Data')}
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'6px',fontSize:'10px'}}>
+          {sectionHeader('Live Data → Audio')}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'4px',fontSize:'9px'}}>
             {weatherData && <>
               <div className="data-chip">🌡 {weatherData.temperature}°C <span>→ Tempo</span></div>
-              <div className="data-chip">💨 {weatherData.windSpeed}km/h <span>→ Filter</span></div>
+              <div className="data-chip">💨 {weatherData.windSpeed}km/h <span>→ Filter / Swing</span></div>
               <div className="data-chip">💧 {weatherData.humidity}% <span>→ Reverb</span></div>
             </>}
             {airData && <>
-              <div className="data-chip">🏭 PM2.5: {airData.pm25} <span>→ Crush</span></div>
+              <div className="data-chip">🏭 PM2.5: {airData.pm25} <span>→ Bitcrusher</span></div>
               <div className="data-chip">🌫 AQI: {airData.aqi} <span>→ Resonance</span></div>
             </>}
             {trafficData && (
-              <div className="data-chip">🚗 {trafficData.totalDisruptions} disruptions <span>→ ADSR</span></div>
+              <div className="data-chip">🚗 {trafficData.totalDisruptions} <span>→ ADSR</span></div>
             )}
             {stockData?.available && <>
               <div className="data-chip" style={{color: parseFloat(stockData.change) >= 0 ? '#6bff7b' : '#ff6b6b'}}>
-                📈 FTSE {parseFloat(stockData.changePercent) >= 0 ? '+' : ''}{stockData.changePercent}% <span>→ Delay</span>
+                📈 {parseFloat(stockData.changePercent) >= 0 ? '+' : ''}{stockData.changePercent}% <span>→ Delay / FM</span>
               </div>
-              <div className="data-chip">📊 Vol: {stockData.volatility} <span>→ FM</span></div>
             </>}
+            {riverData?.level != null && (
+              <div className="data-chip">🌊 {riverData.level}m <span>→ Sub Drone</span></div>
+            )}
+            {flightData?.available && (
+              <div className="data-chip">✈️ {flightData.count} flights <span>→ Twinkle</span></div>
+            )}
           </div>
         </div>
 
-        {/* ── Scale ── */}
+        {/* Scale */}
         <div>
           {sectionHeader('Scale')}
           <select value={selectedScale} onChange={handleScaleChange}
@@ -204,12 +204,12 @@ export default function Home() {
           </select>
         </div>
 
-        {/* ── Drums ── */}
+        {/* Drums */}
         <div>
           {sectionHeader('Drums')}
           <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
             <button onClick={handleDrumToggle} style={{
-              padding:'5px 14px',borderRadius:'5px',fontSize:'11px',fontWeight:600,cursor:'pointer',
+              padding:'4px 12px',borderRadius:'5px',fontSize:'11px',fontWeight:600,cursor:'pointer',
               border: drumsOn ? '1px solid #FFD329' : '1px solid rgba(255,255,255,0.12)',
               background: drumsOn ? 'rgba(255,211,41,0.15)' : 'rgba(255,255,255,0.05)',
               color: drumsOn ? '#FFD329' : '#778',transition:'all 0.2s',
@@ -220,34 +220,33 @@ export default function Home() {
           </div>
         </div>
 
-        {/* ── Line Mutes ── */}
+        {/* Lines */}
         <div>
           {sectionHeader('Lines')}
-          <div style={{display:'flex',flexWrap:'wrap',gap:'4px'}}>
+          <div style={{display:'flex',flexWrap:'wrap',gap:'3px'}}>
             {ALL_LINES.map(line => (
               <button key={line} onClick={() => handleMuteToggle(line)} style={{
-                padding:'4px 8px',borderRadius:'4px',fontSize:'9px',fontWeight:600,cursor:'pointer',
+                padding:'3px 7px',borderRadius:'4px',fontSize:'8px',fontWeight:700,cursor:'pointer',
                 textTransform:'capitalize',transition:'all 0.2s',
                 border:`1px solid ${LINE_COLORS[line]}40`,
                 background: lineMutes[line] ? 'rgba(255,255,255,0.03)' : `${LINE_COLORS[line]}25`,
                 color: lineMutes[line] ? '#445' : LINE_COLORS[line],
-                opacity: lineMutes[line] ? 0.4 : 1,
+                opacity: lineMutes[line] ? 0.35 : 1,
               }}>{line.replace('-',' ')}</button>
             ))}
           </div>
         </div>
 
-        {/* ── Live Events ── */}
+        {/* Events */}
         <div>
           {sectionHeader('Events')}
-          <div style={{display:'flex',flexDirection:'column',gap:'2px',maxHeight:'100px',overflowY:'auto'}}>
+          <div style={{display:'flex',flexDirection:'column',gap:'2px',maxHeight:'80px',overflowY:'auto'}}>
             <AnimatePresence>
-              {activeEvents.slice(0, 12).map(ev => (
+              {activeEvents.slice(0, 10).map(ev => (
                 <motion.div key={ev.id} initial={{opacity:0,x:15}} animate={{opacity:1,x:0}} exit={{opacity:0}}
-                  style={{fontSize:'9px',background:'rgba(255,255,255,0.04)',padding:'4px 6px',borderRadius:'3px',borderLeft:`2px solid ${LINE_COLORS[ev.lineId] || '#fff'}`}}>
+                  style={{fontSize:'9px',background:'rgba(255,255,255,0.04)',padding:'3px 6px',borderRadius:'3px',borderLeft:`2px solid ${LINE_COLORS[ev.lineId] || '#fff'}`}}>
                   <strong style={{color:LINE_COLORS[ev.lineId],textTransform:'capitalize'}}>{ev.lineId.replace('-',' ')}</strong>
                   <span style={{color:'#ccc',marginLeft:'4px'}}>{ev.stationName}</span>
-                  <span style={{color:'#556',marginLeft:'4px'}}>{Math.round(ev.timeToStation)}s</span>
                 </motion.div>
               ))}
             </AnimatePresence>

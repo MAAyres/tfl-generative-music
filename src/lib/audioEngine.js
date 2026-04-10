@@ -46,8 +46,9 @@ export function setScale(scaleName) { if (SCALES[scaleName]) activeScale = SCALE
 export async function initAudio() {
   if (isInitialized) return;
   await Tone.start();
+  console.log("Audio context started");
 
-  // ── Melodic effects chain: instruments → filter → crusher → delay → reverb → compressor → out
+  // ── Create effects nodes ──
   masterReverb = new Tone.Reverb({ decay: 6, wet: 0.4 });
   globalFilter = new Tone.Filter({ type: "lowpass", frequency: 2000, Q: 2 });
   masterCompressor = new Tone.Compressor({ threshold: -24, ratio: 3, attack: 0.1, release: 0.5 });
@@ -55,18 +56,23 @@ export async function initAudio() {
   masterCrusher = new Tone.BitCrusher({ bits: 16 });
   masterCrusher.wet.value = 0;
 
-  Tone.Destination.chain(globalFilter, masterCrusher, masterDelay, masterReverb, masterCompressor);
+  // ── CORRECT melodic chain: filter → crusher → delay → reverb → compressor → speakers ──
+  // Previously this was backwards (Tone.Destination.chain which routes FROM speakers)
+  globalFilter.chain(masterCrusher, masterDelay, masterReverb, masterCompressor, Tone.Destination);
 
-  // ── Dry drum bus: light reverb, NO delay or crusher
-  drumBus = new Tone.Channel({ volume: 0 }).toDestination();
-  const drumReverb = new Tone.Reverb({ decay: 1.2, wet: 0.08 });
-  drumBus.chain(drumReverb);
+  // ── Dry drum bus: drums → light room reverb → speakers (NO delay/crusher) ──
+  const drumReverb = new Tone.Reverb({ decay: 1.0, wet: 0.06 });
+  drumBus = new Tone.Channel({ volume: 0 });
+  drumBus.chain(drumReverb, Tone.Destination);
+
+  // ── Ambient reverb send for drone/twinkle (connects to reverb which is already chained to output) ──
+  // masterReverb is already in the chain above so anything .connect(masterReverb) will flow to destination
 
   Tone.Transport.bpm.value = 60;
   Tone.Transport.swing = 0;
   Tone.Transport.start();
 
-  // ── Ambient pad
+  // ── Ambient pad — connects into reverb ──
   ambientDrone = new Tone.PolySynth(Tone.Synth, {
     oscillator: { type: "sine" },
     envelope: { attack: 3, decay: 2, sustain: 0.8, release: 5 },
@@ -77,31 +83,32 @@ export async function initAudio() {
     ambientDrone.triggerAttackRelease(["C3", "G3", "Eb4"], "2m", time, 0.03);
   }, "8m");
 
-  // ── River Drone: deep sub synth
+  // ── River Drone: deep sub bass — sends to reverb ──
   riverDrone = new Tone.MonoSynth({
     oscillator: { type: "sine" },
     filter: { type: "lowpass", frequency: 200, Q: 1 },
     envelope: { attack: 4, decay: 2, sustain: 1, release: 6 },
     filterEnvelope: { attack: 4, decay: 1, sustain: 0.8, release: 6, baseFrequency: 40, octaves: 1 },
-    volume: -18,
+    volume: -14,
   }).connect(masterReverb);
-
-  // Start with a sustained C1 drone
+  // Start the drone immediately
   riverDrone.triggerAttack("C1", Tone.now());
+  console.log("River drone started");
 
-  // ── Twinkle Synth: high crystalline for flight data
+  // ── Twinkle Synth: high crystalline for flights ──
   twinkleSynth = new Tone.PolySynth(Tone.Synth, {
     oscillator: { type: "sine" },
     envelope: { attack: 0.01, decay: 0.8, sustain: 0, release: 1.5 },
-    volume: -16,
+    volume: -12,
   });
-  // Give twinkle its own delay for sparkle
   const twinkleDelay = new Tone.PingPongDelay({ delayTime: "16n", feedback: 0.3, wet: 0.4 });
   twinkleSynth.chain(twinkleDelay, masterReverb);
+  console.log("Twinkle synth ready");
 
   setupLineInstruments();
   setupDrumKit();
   isInitialized = true;
+  console.log("All audio initialized");
 }
 
 // ── Melodic Instruments ──

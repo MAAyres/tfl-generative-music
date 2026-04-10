@@ -147,7 +147,7 @@ export default function Home() {
 
   return (
     <main className="map-container">
-      <MapComponent activeEvents={activeEvents} />
+      <MapComponent activeEvents={activeEvents} flights={flightData?.flights || []} />
 
       <div className="control-panel">
         <button className={`glow-btn ${isPlaying ? 'active' : ''}`} onClick={toggleAudio}>

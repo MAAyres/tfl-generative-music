@@ -148,3 +148,21 @@ body {
   color: #667;
   font-size: 9px;
 }
+
+.flight-tooltip {
+  background: rgba(0, 40, 60, 0.9) !important;
+  border: 1px solid rgba(0, 212, 255, 0.3) !important;
+  color: #b0f2ff !important;
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  padding: 3px 6px !important;
+  border-radius: 4px !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.6) !important;
+}
+
+.plane-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 1s linear;
+}

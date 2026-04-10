@@ -302,10 +302,11 @@ const LINE_COLORS = {
   elizabeth: "#6950A1",
 };
 
-export default function MapComponent({ activeEvents }) {
+export default function MapComponent({ activeEvents, flights = [] }) {
   const mapRef = useRef(null);
   const mapInstance = useRef(null);
   const markersRef = useRef([]);
+  const flightMarkersRef = useRef({}); // Store flight markers by ID (icao24 or callsign)
 
   useEffect(() => {
     if (mapInstance.current) return;
@@ -352,7 +353,48 @@ export default function MapComponent({ activeEvents }) {
     };
   }, []);
 
-  // Flash markers on the map when live events come in
+  // Update Flight Markers
+  useEffect(() => {
+    if (!mapInstance.current) return;
+
+    // Clear old markers that are no longer in the flight list
+    const currentFlightIds = new Set(flights.map(f => f.callsign || f.icao24));
+    Object.keys(flightMarkersRef.current).forEach(id => {
+      if (!currentFlightIds.has(id)) {
+        mapInstance.current.removeLayer(flightMarkersRef.current[id]);
+        delete flightMarkersRef.current[id];
+      }
+    });
+
+    // Add or update markers for current flights
+    flights.forEach(flight => {
+      const id = flight.callsign || flight.icao24;
+      const pos = [flight.lat, flight.lon];
+
+      if (flightMarkersRef.current[id]) {
+        // Move existing marker
+        flightMarkersRef.current[id].setLatLng(pos);
+      } else {
+        // Create new airplane marker
+        const planeIcon = L.divIcon({
+          className: 'plane-icon',
+          html: `<div style="font-size: 16px; transform: rotate(${flight.heading || 0}deg); filter: drop-shadow(0 0 4px #00d4ff);">✈️</div>`,
+          iconSize: [20, 20],
+          iconAnchor: [10, 10],
+        });
+
+        const marker = L.marker(pos, { icon: planeIcon }).addTo(mapInstance.current);
+        marker.bindTooltip(`${flight.callsign || 'N/A'}<br/>${Math.round(flight.altitude)}m`, {
+          direction: 'right',
+          className: 'flight-tooltip',
+          offset: [10, 0]
+        });
+        flightMarkersRef.current[id] = marker;
+      }
+    });
+  }, [flights]);
+
+  // Flash markers on the map when live events come in (unchanged logic, but ensuring map remains)
   useEffect(() => {
     if (!mapInstance.current || activeEvents.length === 0) return;
     const latest = activeEvents[0];
@@ -361,7 +403,6 @@ export default function MapComponent({ activeEvents }) {
     let matchCoord = null;
     const lineGeo = LINE_GEO[latest.lineId];
     if (lineGeo) {
-      // Hash station name to pick a coordinate on the line
       let hash = 0;
       for (let i = 0; i < latest.stationName.length; i++) {
         hash = latest.stationName.charCodeAt(i) + ((hash << 5) - hash);
@@ -372,8 +413,6 @@ export default function MapComponent({ activeEvents }) {
 
     if (matchCoord) {
       const color = LINE_COLORS[latest.lineId] || '#FFFFFF';
-
-      // Create a pulsing circle marker
       const pulseMarker = L.circleMarker(matchCoord, {
         radius: 12,
         color: color,
@@ -382,7 +421,6 @@ export default function MapComponent({ activeEvents }) {
         weight: 3,
       }).addTo(mapInstance.current);
 
-      // Add a tooltip with station name
       pulseMarker.bindTooltip(latest.stationName, {
         permanent: true,
         direction: 'top',
@@ -390,9 +428,10 @@ export default function MapComponent({ activeEvents }) {
         offset: [0, -15],
       }).openTooltip();
 
-      // Remove after 3 seconds
       setTimeout(() => {
-        mapInstance.current?.removeLayer(pulseMarker);
+        if (mapInstance.current && mapInstance.current.hasLayer(pulseMarker)) {
+          mapInstance.current.removeLayer(pulseMarker);
+        }
       }, 3000);
     }
   }, [activeEvents]);

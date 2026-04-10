@@ -83,25 +83,25 @@ export async function initAudio() {
     ambientDrone.triggerAttackRelease(["C3", "G3", "Eb4"], "2m", time, 0.03);
   }, "8m");
 
-  // ── River Drone: deep sub bass — sends to reverb ──
+  // ── River Drone: bass drone — sends to reverb ──
   riverDrone = new Tone.MonoSynth({
     oscillator: { type: "sine" },
-    filter: { type: "lowpass", frequency: 200, Q: 1 },
+    filter: { type: "lowpass", frequency: 150, Q: 1 },
     envelope: { attack: 4, decay: 2, sustain: 1, release: 6 },
-    filterEnvelope: { attack: 4, decay: 1, sustain: 0.8, release: 6, baseFrequency: 40, octaves: 1 },
-    volume: -14,
+    filterEnvelope: { attack: 4, decay: 1, sustain: 0.8, release: 6, baseFrequency: 80, octaves: 1 },
+    volume: -12,
   }).connect(masterReverb);
-  // Start the drone immediately
-  riverDrone.triggerAttack("C1", Tone.now());
-  console.log("River drone started");
+  // Start the drone at C2 (approx 65Hz) instead of C1 for better audibility
+  riverDrone.triggerAttack("C2", Tone.now());
+  console.log("River drone started at C2");
 
   // ── Twinkle Synth: high crystalline for flights ──
   twinkleSynth = new Tone.PolySynth(Tone.Synth, {
     oscillator: { type: "sine" },
-    envelope: { attack: 0.01, decay: 0.8, sustain: 0, release: 1.5 },
-    volume: -12,
+    envelope: { attack: 0.05, decay: 1.2, sustain: 0, release: 2.0 },
+    volume: -10,
   });
-  const twinkleDelay = new Tone.PingPongDelay({ delayTime: "16n", feedback: 0.3, wet: 0.4 });
+  const twinkleDelay = new Tone.PingPongDelay({ delayTime: "8n", feedback: 0.4, wet: 0.5 });
   twinkleSynth.chain(twinkleDelay, masterReverb);
   console.log("Twinkle synth ready");
 
@@ -330,16 +330,17 @@ export function applyRiverModulation(riverData) {
   const high = typicalRange?.high || 5.0;
   const normalized = Math.max(0, Math.min(1, (level - low) / (high - low)));
 
-  // Map to pitch: low water = C1 (32.7Hz), high water = F0 (21.8Hz) — deeper when high
-  const pitchFreq = 32.7 - (normalized * 11);
+  // Map to pitch: low water = C2 (65.4Hz), high water = F1 (43.6Hz) — deeper when high
+  // This is an octave higher than before to ensure it's heard on most speakers
+  const pitchFreq = 65.4 - (normalized * 22);
   riverDrone.frequency.rampTo(pitchFreq, 8);
 
   // Adjust drone filter — higher water = slightly more open sub
-  const filterFreq = 80 + normalized * 120;
+  const filterFreq = 120 + normalized * 180;
   riverDrone.filter.frequency.rampTo(filterFreq, 5);
 
   // Adjust volume: louder when higher
-  const vol = -22 + normalized * 8;
+  const vol = -16 + normalized * 6;
   riverDrone.volume.rampTo(vol, 5);
 }
 

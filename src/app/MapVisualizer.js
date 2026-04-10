@@ -3,163 +3,197 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { useEffect, useState } from "react";
 
-// Abstract coordinates for our simplified layout
-const LINES = {
-  victoria: {
-    color: "#0098D4",
-    path: "M 300 1200 Q 600 700 900 300 L 1200 100",
+// Exact SVG point coordinates mimicking central London Tube Map structural layout
+const MAP_DATA = {
+  lines: {
+    victoria: { 
+      color: "#0098D4", 
+      points: [[150, 950], [250, 850], [250, 500], [450, 300], [600, 150], [800, 150]] 
+    },
+    central: { 
+      color: "#DC241F", 
+      points: [[50, 300], [450, 300], [700, 300], [1050, 300]] 
+    },
+    piccadilly: { 
+      color: "#003688", 
+      points: [[50, 700], [250, 500], [500, 500], [700, 500], [850, 350], [1050, 350]] 
+    },
+    jubilee: { 
+      color: "#868F98", 
+      points: [[150, 850], [250, 750], [450, 750], [700, 750], [850, 900], [1000, 900]] 
+    },
+    northern: { 
+      color: "#FFFFFF", 
+      points: [[700, 100], [700, 300], [700, 500], [700, 600], [700, 750], [800, 950], [800, 1050]] 
+    },
+    bakerloo: { 
+      color: "#B26300", 
+      points: [[350, 100], [450, 300], [500, 500], [600, 600], [700, 600], [700, 750], [850, 900], [1100, 900]] 
+    },
   },
-  central: {
-    color: "#DC241F",
-    path: "M 200 750 L 1300 750",
-  },
-  northern: {
-    color: "#FFFFFF",
-    path: "M 750 200 L 750 1300",
-  },
-  jubilee: {
-    color: "#868F98",
-    path: "M 250 300 Q 600 600 1000 1200",
-  },
-  bakerloo: {
-    color: "#B26300",
-    path: "M 300 450 Q 750 900 1200 750",
-  },
-  piccadilly: {
-    color: "#003688",
-    path: "M 150 1200 Q 900 900 1350 300",
-  }
+  stationLabels: [
+    { name: 'Oxford Circus', x: 450, y: 300, dx: -15, dy: -25 },
+    { name: 'Piccadilly Circus', x: 500, y: 500, dx: 25, dy: 25 },
+    { name: 'Green Park', x: 250, y: 500, dx: -15, dy: -25 },
+    { name: 'Leicester Square', x: 700, y: 500, dx: 25, dy: -25 },
+    { name: 'Charing Cross', x: 700, y: 600, dx: 25, dy: 5 },
+    { name: 'Embankment', x: 700, y: 750, dx: 25, dy: 25 },
+    { name: 'Westminster', x: 450, y: 750, dx: -25, dy: 25 },
+    { name: 'Waterloo', x: 850, y: 900, dx: 25, dy: 25 },
+    { name: 'Tottenham Ct Rd', x: 700, y: 300, dx: 25, dy: -25 },
+  ]
 };
 
-// Generate a deterministic 0-100 percentage based on the station name string
-function getStationSeed(stationName) {
+// Convert array of [x,y] coordinates mapped to string <path d="..." />
+function createPath(points) {
+  if (!points || points.length === 0) return '';
+  let d = `M ${points[0][0]} ${points[0][1]}`;
+  for (let i = 1; i < points.length; i++) {
+    d += ` L ${points[i][0]} ${points[i][1]}`;
+  }
+  return d;
+}
+
+// Ensure stations stick to literal vertices defined in the path for accuracy
+function getStationCoordinates(lineId, stationName) {
+  const line = MAP_DATA.lines[lineId];
+  if (!line) return { x: 500, y: 500 };
   let hash = 0;
   for (let i = 0; i < stationName.length; i++) {
     hash = stationName.charCodeAt(i) + ((hash << 5) - hash);
   }
-  return Math.abs(hash % 100);
+  const index = Math.abs(hash) % line.points.length;
+  return { x: line.points[index][0], y: line.points[index][1] };
+}
+
+// Collect all unique vertex points to draw the standard Tube "Station" hollow circles
+const getAllVertices = () => {
+    const vertices = [];
+    const seen = new Set();
+    Object.values(MAP_DATA.lines).forEach(line => {
+        line.points.forEach(pt => {
+            const key = `${pt[0]},${pt[1]}`;
+            if (!seen.has(key)) {
+                seen.add(key);
+                vertices.push({ x: pt[0], y: pt[1] });
+            }
+        });
+    });
+    return vertices;
 }
 
 export default function MapVisualizer({ activeEvents }) {
   const [pulses, setPulses] = useState([]);
+  const [vertices, setVertices] = useState([]);
+
+  useEffect(() => {
+     setVertices(getAllVertices());
+  }, []);
 
   useEffect(() => {
     if (activeEvents.length > 0) {
-      const latest = activeEvents[0];
+      const latest = activeEvents[0]; // the newly added event
+      
+      const coords = getStationCoordinates(latest.lineId, latest.stationName);
+
       setPulses(p => [...p, { 
         id: latest.id, 
         lineId: latest.lineId, 
         stationName: latest.stationName,
+        x: coords.x,
+        y: coords.y,
         timestamp: Date.now() 
       }]);
       
-      // Remove pulses after 4 seconds to let them fade nicely
+      // Let the pulse fade out over a few seconds
       setTimeout(() => {
         setPulses(p => p.filter(pulse => pulse.id !== latest.id));
-      }, 4000);
+      }, 3500);
     }
   }, [activeEvents]);
 
   return (
-    <div style={{ position: "absolute", inset: 0, overflow: "hidden", pointerEvents: "none" }}>
-      {/* 
-        By increasing the viewBox array negatively and making the total dimensions larger, 
-        we effectively "zoom out" the abstract map so it feels much more atmospheric.
-      */}
+    <div style={{ position: "absolute", inset: 0, overflow: "hidden", pointerEvents: "none", backgroundColor: "#101015" }}>
       <svg 
         width="100%" 
         height="100%" 
-        viewBox="-200 -200 1900 1900" 
+        viewBox="-100 -50 1300 1200" 
         preserveAspectRatio="xMidYMid slice"
-        style={{ filter: "drop-shadow(0 0 10px rgba(255,255,255,0.05))" }}
+        style={{ filter: "drop-shadow(0 0 10px rgba(0,0,0,0.5))" }}
       >
-        {/* Draw abstract background line guides */}
-        {Object.keys(LINES).map(lineId => (
+        {/* Draw the thick robust Tube Map Lines */}
+        {Object.keys(MAP_DATA.lines).map(lineId => (
           <g key={lineId}>
-            <motion.path
-              d={LINES[lineId].path}
-              stroke={LINES[lineId].color}
-              strokeWidth="2"
+            <path
+              d={createPath(MAP_DATA.lines[lineId].points)}
+              stroke={MAP_DATA.lines[lineId].color}
+              strokeWidth="16"
               fill="none"
               strokeLinecap="round"
-              initial={{ pathLength: 0, opacity: 0 }}
-              animate={{ pathLength: 1, opacity: 0.15 }}
-              transition={{ duration: 3, ease: "easeInOut" }}
+              strokeLinejoin="round"
             />
           </g>
         ))}
 
-        {/* Draw central intersection hub */}
-        <motion.circle 
-          cx="750" 
-          cy="750" 
-          r="8" 
-          fill="#FFF" 
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 0.3 }}
-          transition={{ delay: 2, duration: 1 }}
-        />
-      </svg>
+        {/* Draw exactly accurate Topographical Station Markers (hollow white rings) */}
+        {vertices.map((v, i) => (
+            <circle 
+                key={i} 
+                cx={v.x} 
+                cy={v.y} 
+                r="6" 
+                fill="#101015" 
+                stroke="#FFFFFF" 
+                strokeWidth="3" 
+            />
+        ))}
 
-      {/* Render flashing stations using CSS offset-path overlaying the SVG */}
-      <div style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
+        {/* Draw labels for core stations */}
+        {MAP_DATA.stationLabels.map((lbl, i) => (
+            <text 
+                key={i} 
+                x={lbl.x + lbl.dx} 
+                y={lbl.y + lbl.dy} 
+                fill="#EEEEEE" 
+                fontSize="14" 
+                fontWeight="bold" 
+                fontFamily="sans-serif"
+                textAnchor={lbl.anchor || "middle"}
+                alignmentBaseline="middle"
+            >
+                {lbl.name}
+            </text>
+        ))}
+
+        {/* Draw active pulsing stations precisely where trains arrive */}
         <AnimatePresence>
           {pulses.map(pulse => {
-            const lineData = LINES[pulse.lineId];
+            const lineData = MAP_DATA.lines[pulse.lineId];
             if (!lineData) return null;
-            
-            const offsetPercentage = getStationSeed(pulse.stationName);
-            
             return (
-              <motion.div
-                key={pulse.id}
-                style={{
-                  position: 'absolute',
-                  width: '20px',
-                  height: '20px',
-                  borderRadius: '50%',
-                  background: lineData.color,
-                  // Position relative to the center of the viewport scaling to match SVG viewbox mostly, 
-                  // but we map it directly internally using CSS motion paths!
-                  offsetPath: `path('${lineData.path}')`,
-                  offsetDistance: `${offsetPercentage}%`,
-                  // We must offset the visual offset to account for the viewport differences 
-                  // Because offset-path works on the container's 0 0, we can use a wrapper to scale.
-                }}
-                initial={{ opacity: 0, scale: 0.2 }}
-                animate={{ 
-                  opacity: [0, 1, 0.4, 0], 
-                  scale: [0.5, 2.5, 1, 0.5],
-                  boxShadow: [
-                    `0 0 0px ${lineData.color}`,
-                    `0 0 30px ${lineData.color}`,
-                    `0 0 10px ${lineData.color}`,
-                    `0 0 0px ${lineData.color}`
-                  ]
-                }}
-                exit={{ opacity: 0, scale: 0 }}
-                transition={{ duration: 3, ease: 'easeOut' }}
-              >
-                 {/* Visual core of the station flash */}
-                 <div style={{width: '100%', height: '100%', background: '#fff', borderRadius:'50%', transform: 'scale(0.3)'}} />
-                 <span style={{ 
-                    position: 'absolute', 
-                    top: '24px', 
-                    left: '50%', 
-                    transform: 'translateX(-50%)', 
-                    color: '#fff', 
-                    fontSize: '10px', 
-                    whiteSpace: 'nowrap',
-                    textShadow: '0 2px 4px rgba(0,0,0,0.8)'
-                 }}>
-                   {pulse.stationName}
-                 </span>
-              </motion.div>
+              <motion.g key={pulse.id} transform={`translate(${pulse.x}, ${pulse.y})`}>
+                <motion.circle
+                    r="8"
+                    fill="#FFF"
+                    initial={{ scale: 0.5, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0, opacity: 0 }}
+                    transition={{ duration: 0.3 }}
+                />
+                <motion.circle
+                    r="24"
+                    fill="none"
+                    stroke={lineData.color}
+                    strokeWidth="4"
+                    initial={{ scale: 0, opacity: 1 }}
+                    animate={{ scale: 2.5, opacity: 0 }}
+                    transition={{ duration: 1.5, repeat: 2, ease: "easeOut" }}
+                />
+              </motion.g>
             )
           })}
         </AnimatePresence>
-      </div>
-
+      </svg>
     </div>
   );
 }

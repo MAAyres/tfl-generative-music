@@ -37,8 +37,9 @@ export async function initAudio() {
 
   ambientDrone.triggerAttackRelease(["C3", "G3", "Eb4"], "1m");
   Tone.Transport.scheduleRepeat((time) => {
-    ambientDrone.triggerAttackRelease(["C3", "G3", "Eb4"], "2m", time);
-  }, "4m");
+    // Subtly trigger it very, very quietly every 8 measures so it doesn't mask the live data
+    ambientDrone.triggerAttackRelease(["C3", "G3", "Eb4"], "2m", time, 0.05);
+  }, "8m");
 
   setupLineInstruments();
   isInitialized = true;

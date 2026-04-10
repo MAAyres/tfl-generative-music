@@ -5,8 +5,9 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   try {
     // OpenSky Network API (free, no key for limited use)
-    // Bounding box around London: lat 51.3-51.7, lon -0.5 to 0.3
-    const url = 'https://opensky-network.org/api/states/all?lamin=51.3&lomin=-0.5&lamax=51.7&lomax=0.3';
+    // Expanded box: South East England (roughly Bournemouth to Norwich)
+    // lomin: -2.0, lamin: 50.5, lomax: 2.0, lamax: 53.0
+    const url = 'https://opensky-network.org/api/states/all?lamin=50.5&lomin=-2.0&lamax=53.0&lomax=2.0';
     const response = await fetch(url, { cache: 'no-store' });
     console.log(`OpenSky API Status: ${response.status} ${response.statusText}`);
 

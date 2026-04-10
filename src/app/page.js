@@ -30,6 +30,8 @@ export default function Home() {
   const [riverData, setRiverData] = useState(null);
   const [flightData, setFlightData] = useState(null);
   const [flightStatus, setFlightStatus] = useState('idle');
+  const [syntheticFlights, setSyntheticFlights] = useState([]);
+  const flightFailCount = useRef(0);
   const [activeEvents, setActiveEvents] = useState([]);
   const [apiStatus, setApiStatus] = useState('idle');
   const [errorMsg, setErrorMsg] = useState('');
@@ -98,18 +100,69 @@ export default function Home() {
       setFlightStatus('loading');
       const r = await fetch("/api/flights");
       const d = await r.json();
-      console.log("Flight Data Update:", d);
-      if (d.success && d.data.available) {
+      
+      if (d.success && d.data.available && d.data.count > 0) {
         setFlightData(d.data);
         setFlightStatus('ok');
+        setSyntheticFlights([]); // Clear synthetic if real works
+        flightFailCount.current = 0;
         triggerFlightTwinkles(d.data);
       } else {
-        setFlightStatus(d.data.available === false ? 'limited' : 'error');
+        // Increment fail count if no data or unavailable
+        flightFailCount.current++;
+        if (flightFailCount.current >= 2) {
+          setFlightStatus('synthetic');
+          updateSyntheticSkies();
+        } else {
+          setFlightStatus('waiting');
+        }
       }
     } catch (e) {
       console.error("Flight fetch fail:", e);
-      setFlightStatus('error');
+      flightFailCount.current++;
+      if (flightFailCount.current >= 2) setFlightStatus('synthetic');
+      else setFlightStatus('error');
     }
+  };
+
+  const updateSyntheticSkies = () => {
+    // Generate or update 4-6 synthetic flights moving across London
+    setSyntheticFlights(prev => {
+      let next = [...prev];
+      // If we have none, spawn a bunch
+      if (next.length < 4) {
+        for (let i = 0; i < 5; i++) {
+          next.push({
+            icao24: `SYNTH-${Math.random().toString(36).substr(2, 5)}`,
+            callsign: `GEN-${100 + Math.floor(Math.random()*900)}`,
+            lat: 51.3 + Math.random() * 0.4,
+            lon: -0.5 + Math.random() * 0.8,
+            altitude: 2000 + Math.random() * 8000,
+            velocity: 150 + Math.random() * 100,
+            heading: Math.random() * 360,
+            isSynthetic: true
+          });
+        }
+      } else {
+        // Move existing ones slightly based on heading/velocity (approx 5s movement)
+        next = next.map(f => {
+          const dist = (f.velocity * 5) / 111000; // rough deg conversion
+          const rad = (f.heading * Math.PI) / 180;
+          let newLat = f.lat + dist * Math.cos(rad);
+          let newLon = f.lon + dist * Math.sin(rad);
+          
+          // Re-spawn if they leave the box
+          if (newLat < 51.0 || newLat > 52.0 || newLon < -1.0 || newLon > 1.0) {
+            newLat = 51.3 + Math.random() * 0.4;
+            newLon = -0.5 + Math.random() * 0.8;
+          }
+          return { ...f, lat: newLat, lon: newLon };
+        });
+      }
+      // Trigger twinkles for these synthetic planes
+      triggerFlightTwinkles({ flights: next, available: true });
+      return next;
+    });
   };
 
   const scheduleNotesFromData = (arrivalsByLine) => {
@@ -154,7 +207,10 @@ export default function Home() {
 
   return (
     <main className="map-container">
-      <MapComponent activeEvents={activeEvents} flights={flightData?.flights || []} />
+      <MapComponent 
+        activeEvents={activeEvents} 
+        flights={flightStatus === 'synthetic' ? syntheticFlights : (flightData?.flights || [])} 
+      />
 
       <div className="control-panel">
         <button className={`glow-btn ${isPlaying ? 'active' : ''}`} onClick={toggleAudio}>
@@ -196,16 +252,15 @@ export default function Home() {
             {riverData?.level != null && (
               <div className="data-chip">🌊 {riverData.level}m <span>→ Sub Drone</span></div>
             )}
-            {flightData?.available !== undefined && (
-              <div className="data-chip" style={{
-                color: flightStatus === 'ok' ? '#b0f2ff' : flightStatus === 'limited' ? '#ff9f43' : flightStatus === 'loading' ? '#aaa' : '#ff6b6b'
-              }}>
-                ✈️ {flightStatus === 'loading' ? 'Scanning Skies...' : 
-                    flightStatus === 'ok' ? `${flightData.count} flights` : 
-                    flightStatus === 'limited' ? 'API Limited' : 'Link Failed'}
-                <span>→ Twinkle {flightStatus === 'loading' && '...'}</span>
-              </div>
-            )}
+            <div className="data-chip" style={{
+              color: flightStatus === 'ok' ? '#b0f2ff' : flightStatus === 'synthetic' ? '#ff9f43' : flightStatus === 'loading' ? '#aaa' : '#ff6b6b'
+            }}>
+              ✈️ {flightStatus === 'loading' ? 'Scanning Skies...' : 
+                  flightStatus === 'ok' ? `${flightData?.count || 0} flights` : 
+                  flightStatus === 'synthetic' ? 'Synthesizing Skies' :
+                  flightStatus === 'waiting' ? 'Buffering Skies...' : 'Link Failed'}
+              <span>→ Twinkle {flightStatus === 'loading' && '...'}</span>
+            </div>
           </div>
         </div>
 

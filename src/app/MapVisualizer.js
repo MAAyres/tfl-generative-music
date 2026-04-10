@@ -82,7 +82,7 @@ const getAllVertices = () => {
     return vertices;
 }
 
-export default function MapVisualizer({ activeEvents }) {
+export default function MapVisualizer({ activeEvents, zoomLevel = 1.0 }) {
   const [pulses, setPulses] = useState([]);
   const [vertices, setVertices] = useState([]);
 
@@ -112,14 +112,26 @@ export default function MapVisualizer({ activeEvents }) {
     }
   }, [activeEvents]);
 
+  // Compute viewBox dynamically based on zoom scale.
+  // Base dimensions of the SVG abstract layout logic
+  const baseW = 1300;
+  const baseH = 1200;
+  const minX = -100;
+  const minY = -50;
+
+  const w = baseW / zoomLevel;
+  const h = baseH / zoomLevel;
+  const x = minX + (baseW - w) / 2;
+  const y = minY + (baseH - h) / 2;
+
   return (
     <div style={{ position: "absolute", inset: 0, overflow: "hidden", pointerEvents: "none", backgroundColor: "#101015" }}>
       <svg 
         width="100%" 
         height="100%" 
-        viewBox="-100 -50 1300 1200" 
+        viewBox={`${x} ${y} ${w} ${h}`} 
         preserveAspectRatio="xMidYMid slice"
-        style={{ filter: "drop-shadow(0 0 10px rgba(0,0,0,0.5))" }}
+        style={{ filter: "drop-shadow(0 0 10px rgba(0,0,0,0.5))", transition: "all 0.5s ease-out" }}
       >
         {/* Draw the thick robust Tube Map Lines */}
         {Object.keys(MAP_DATA.lines).map(lineId => (

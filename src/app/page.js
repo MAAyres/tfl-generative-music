@@ -9,6 +9,7 @@ export default function Home() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [weatherData, setWeatherData] = useState(null);
   const [activeEvents, setActiveEvents] = useState([]);
+  const [mapZoom, setMapZoom] = useState(1.0);
   
   // A ref to keep track of triggered arrivals to prevent double-firing
   const processedArrivals = useRef(new Set());
@@ -49,9 +50,14 @@ export default function Home() {
       const tData = await tRes.json();
       if (tData.success && isPlaying) {
         processTFLData(tData.data);
+      } else if (!tData.success && isPlaying) {
+        setActiveEvents(prev => [{id: Math.random(), lineId: 'central', stationName: `TFL API Error: ${tData.error || 'Check API Key'}`}, ...prev].slice(0, 10));
       }
     } catch (err) {
       console.error("Failed TFL:", err);
+      if (isPlaying) {
+        setActiveEvents(prev => [{id: Math.random(), lineId: 'northern', stationName: 'Network fetch failed.'}, ...prev].slice(0, 10));
+      }
     }
   };
 
@@ -62,7 +68,9 @@ export default function Home() {
     
     Object.keys(arrivalsByLine).forEach(lineId => {
       arrivalsByLine[lineId].forEach(arrival => {
-        if (arrival.timeToStation < 60) {
+        // Expand the capture window to 300 seconds (5 minutes) so that trains frequently
+        // hit our queue even during quiet hours or low traffic API polling, preventing the system from going dead.
+        if (arrival.timeToStation < 300) {
           if (!processedArrivals.current.has(arrival.id)) {
             // New imminent arrival! Trigger the audio.
             triggerArrivalPoint(lineId, arrival.stationId);
@@ -102,7 +110,7 @@ export default function Home() {
 
   return (
     <main className="map-container">
-      <MapVisualizer activeEvents={activeEvents} />
+      <MapVisualizer activeEvents={activeEvents} zoomLevel={mapZoom} />
 
       <div className="control-panel">
         <div>
@@ -131,6 +139,19 @@ export default function Home() {
             </div>
           </>
         )}
+
+        <div style={{ marginTop: '10px' }}>
+          <h4 style={{ color: '#fff', fontSize: '13px', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '8px', margin: '0 0 12px 0' }}>Map View</h4>
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: '8px', fontSize: '11px' }}>
+              <span style={{ width: '60px', color: '#eee' }}>Zoom</span>
+              <input 
+                type="range" 
+                min="0.5" max="3" step="0.1" value={mapZoom}
+                onChange={(e) => setMapZoom(parseFloat(e.target.value))}
+                style={{ flex: 1, accentColor: `#FFF` }}
+              />
+          </div>
+        </div>
 
         <div style={{ marginTop: '10px' }}>
           <h4 style={{ color: '#fff', fontSize: '13px', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '8px', margin: '0 0 12px 0' }}>Line Volumes</h4>

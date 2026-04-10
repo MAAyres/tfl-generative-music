@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { initAudio, applyWeatherModulation, triggerArrivalPoint } from "@/lib/audioEngine";
+import { initAudio, applyWeatherModulation, triggerArrivalPoint, setLineVolume } from "@/lib/audioEngine";
 import { motion, AnimatePresence } from "framer-motion";
 import MapVisualizer from "./MapVisualizer";
 
@@ -132,7 +132,23 @@ export default function Home() {
           </>
         )}
 
-        <div style={{ marginTop: '20px' }}>
+        <div style={{ marginTop: '10px' }}>
+          <h4 style={{ color: '#fff', fontSize: '13px', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '8px', margin: '0 0 12px 0' }}>Line Volumes</h4>
+          {['victoria', 'jubilee', 'northern', 'piccadilly', 'central', 'bakerloo'].map(line => (
+            <div key={line} style={{ display: 'flex', alignItems: 'center', marginBottom: '8px', fontSize: '11px' }}>
+              <span style={{ width: '60px', color: `var(--${line})`, textTransform: 'capitalize' }}>{line}</span>
+              <input 
+                type="range" 
+                min="-60" max="0" defaultValue="-10"
+                onChange={(e) => setLineVolume(line, parseFloat(e.target.value))}
+                style={{ flex: 1, accentColor: `var(--${line})` }}
+                aria-label={`${line} volume`}
+              />
+            </div>
+          ))}
+        </div>
+
+        <div style={{ marginTop: '10px' }}>
           <h4 style={{ color: '#fff', fontSize: '13px', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '8px', margin: '0 0 12px 0' }}>Live Events</h4>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '180px', overflowY: 'auto' }}>
             <AnimatePresence>

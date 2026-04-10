@@ -3,48 +3,92 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { useEffect, useState } from "react";
 
-// Exact SVG point coordinates mimicking central London Tube Map structural layout
+// Expanded structural layout mirroring the sprawling geometry of the full London Tube Map
 const MAP_DATA = {
   lines: {
     victoria: { 
       color: "#0098D4", 
-      points: [[150, 950], [250, 850], [250, 500], [450, 300], [600, 150], [800, 150]] 
+      paths: [
+        [[1000, -200], [800, 200], [600, 500], [450, 750], [350, 1100], [350, 1400]]
+      ]
     },
     central: { 
       color: "#DC241F", 
-      points: [[50, 300], [450, 300], [700, 300], [1050, 300]] 
+      paths: [
+        [[-200, 650], [200, 650], [450, 750], [800, 750], [1100, 600], [1600, 600]],
+        [[1100, 600], [1300, 400], [1500, 300]] // Hainault loop hint
+      ]
     },
     piccadilly: { 
       color: "#003688", 
-      points: [[50, 700], [250, 500], [500, 500], [700, 500], [850, 350], [1050, 350]] 
+      paths: [
+        [[-300, 1200], [50, 950], [300, 800], [600, 750], [800, 500], [1000, 200], [1200, -100]],
+        [[-300, 950], [50, 950]] // Uxbridge branch
+      ]
     },
     jubilee: { 
       color: "#868F98", 
-      points: [[150, 850], [250, 750], [450, 750], [700, 750], [850, 900], [1000, 900]] 
+      paths: [
+        [[100, 0], [300, 300], [500, 500], [700, 850], [1000, 850], [1200, 650], [1600, 650]]
+      ]
     },
     northern: { 
       color: "#FFFFFF", 
-      points: [[700, 100], [700, 300], [700, 500], [700, 600], [700, 750], [800, 950], [800, 1050]] 
+      paths: [
+        [[500, -100], [600, 200], [600, 500], [700, 800], [600, 1200], [500, 1600]], // Edgware & Bank Branch
+        [[800, -100], [800, 300], [750, 500], [700, 800]] // High Barnet & CX Branch
+      ]
     },
     bakerloo: { 
       color: "#B26300", 
-      points: [[350, 100], [450, 300], [500, 500], [600, 600], [700, 600], [700, 750], [850, 900], [1100, 900]] 
+      paths: [
+        [[100, 100], [300, 300], [500, 500], [600, 750], [700, 900], [750, 1100]]
+      ]
     },
+    district: {
+      color: "#00782A",
+      paths: [
+        [[-200, 850], [200, 850], [400, 950], [900, 950], [1200, 850], [1700, 850]], // Main line Upminster
+        [[200, 1200], [200, 850]], // Wimbledon
+        [[0, 1100], [200, 850]] // Richmond
+      ]
+    },
+    circle: {
+      color: "#FFD329",
+      paths: [
+        [[350, 700], [850, 700], [850, 950], [350, 950], [350, 700]] // Center loop
+      ]
+    },
+    metropolitan: {
+      color: "#9B0058",
+      paths: [
+        [[-300, 200], [200, 400], [500, 550], [850, 700]]
+      ]
+    },
+    hammersmith: {
+      color: "#F3A9BB",
+      paths: [
+        [[100, 650], [350, 700], [850, 700], [1000, 600], [1200, 550]]
+      ]
+    }
   },
   stationLabels: [
-    { name: 'Oxford Circus', x: 450, y: 300, dx: -15, dy: -25 },
-    { name: 'Piccadilly Circus', x: 500, y: 500, dx: 25, dy: 25 },
-    { name: 'Green Park', x: 250, y: 500, dx: -15, dy: -25 },
-    { name: 'Leicester Square', x: 700, y: 500, dx: 25, dy: -25 },
-    { name: 'Charing Cross', x: 700, y: 600, dx: 25, dy: 5 },
-    { name: 'Embankment', x: 700, y: 750, dx: 25, dy: 25 },
-    { name: 'Westminster', x: 450, y: 750, dx: -25, dy: 25 },
-    { name: 'Waterloo', x: 850, y: 900, dx: 25, dy: 25 },
-    { name: 'Tottenham Ct Rd', x: 700, y: 300, dx: 25, dy: -25 },
+    { name: 'Oxford Circus', x: 600, y: 750, dx: -20, dy: -25 },
+    { name: 'Piccadilly Circus', x: 600, y: 800, dx: 25, dy: 15 },
+    { name: 'Green Park', x: 500, y: 750, dx: -15, dy: -25 },
+    { name: 'Leicester Square', x: 700, y: 750, dx: 15, dy: -25 },
+    { name: 'Charing Cross', x: 700, y: 800, dx: 25, dy: 5 },
+    { name: 'Embankment', x: 750, y: 850, dx: 25, dy: 25 },
+    { name: 'Westminster', x: 500, y: 850, dx: -25, dy: 25 },
+    { name: 'Waterloo', x: 800, y: 900, dx: 25, dy: 25 },
+    { name: 'King\'s Cross', x: 700, y: 500, dx: 25, dy: -25 },
+    { name: 'Stratford', x: 1200, y: 650, dx: 0, dy: -25 },
+    { name: 'Heathrow', x: -300, y: 1200, dx: 0, dy: 25 },
+    { name: 'Epping', x: 1600, y: 600, dx: 25, dy: -5 },
+    { name: 'Upminster', x: 1700, y: 850, dx: 0, dy: -25 },
   ]
 };
 
-// Convert array of [x,y] coordinates mapped to string <path d="..." />
 function createPath(points) {
   if (!points || points.length === 0) return '';
   let d = `M ${points[0][0]} ${points[0][1]}`;
@@ -54,29 +98,35 @@ function createPath(points) {
   return d;
 }
 
-// Ensure stations stick to literal vertices defined in the path for accuracy
 function getStationCoordinates(lineId, stationName) {
   const line = MAP_DATA.lines[lineId];
-  if (!line) return { x: 500, y: 500 };
+  if (!line || !line.paths[0]) return { x: 500, y: 500 };
+  
   let hash = 0;
   for (let i = 0; i < stationName.length; i++) {
     hash = stationName.charCodeAt(i) + ((hash << 5) - hash);
   }
-  const index = Math.abs(hash) % line.points.length;
-  return { x: line.points[index][0], y: line.points[index][1] };
+  
+  // Pick an arbitrary path from the line and a vertex based on string hash
+  const pathIndex = Math.abs(hash) % line.paths.length;
+  const targetPath = line.paths[pathIndex];
+  const vertexIndex = Math.abs(hash) % targetPath.length;
+  
+  return { x: targetPath[vertexIndex][0], y: targetPath[vertexIndex][1] };
 }
 
-// Collect all unique vertex points to draw the standard Tube "Station" hollow circles
 const getAllVertices = () => {
     const vertices = [];
     const seen = new Set();
     Object.values(MAP_DATA.lines).forEach(line => {
-        line.points.forEach(pt => {
-            const key = `${pt[0]},${pt[1]}`;
-            if (!seen.has(key)) {
-                seen.add(key);
-                vertices.push({ x: pt[0], y: pt[1] });
-            }
+        line.paths.forEach(path => {
+          path.forEach(pt => {
+              const key = `${pt[0]},${pt[1]}`;
+              if (!seen.has(key)) {
+                  seen.add(key);
+                  vertices.push({ x: pt[0], y: pt[1] });
+              }
+          });
         });
     });
     return vertices;
@@ -92,8 +142,7 @@ export default function MapVisualizer({ activeEvents, zoomLevel = 1.0 }) {
 
   useEffect(() => {
     if (activeEvents.length > 0) {
-      const latest = activeEvents[0]; // the newly added event
-      
+      const latest = activeEvents[0];
       const coords = getStationCoordinates(latest.lineId, latest.stationName);
 
       setPulses(p => [...p, { 
@@ -113,11 +162,11 @@ export default function MapVisualizer({ activeEvents, zoomLevel = 1.0 }) {
   }, [activeEvents]);
 
   // Compute viewBox dynamically based on zoom scale.
-  // Base dimensions of the SVG abstract layout logic
-  const baseW = 1300;
-  const baseH = 1200;
-  const minX = -100;
-  const minY = -50;
+  // Expanded abstract viewBox to cover outer London
+  const baseW = 2800;
+  const baseH = 2400;
+  const minX = -600;
+  const minY = -400;
 
   const w = baseW / zoomLevel;
   const h = baseH / zoomLevel;
@@ -133,41 +182,44 @@ export default function MapVisualizer({ activeEvents, zoomLevel = 1.0 }) {
         preserveAspectRatio="xMidYMid slice"
         style={{ filter: "drop-shadow(0 0 10px rgba(0,0,0,0.5))", transition: "all 0.5s ease-out" }}
       >
-        {/* Draw the thick robust Tube Map Lines */}
+        {/* Draw the massive network lines */}
         {Object.keys(MAP_DATA.lines).map(lineId => (
           <g key={lineId}>
-            <path
-              d={createPath(MAP_DATA.lines[lineId].points)}
-              stroke={MAP_DATA.lines[lineId].color}
-              strokeWidth="16"
-              fill="none"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
+            {MAP_DATA.lines[lineId].paths.map((pathPts, idx) => (
+              <path
+                key={idx}
+                d={createPath(pathPts)}
+                stroke={MAP_DATA.lines[lineId].color}
+                strokeWidth="18"
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            ))}
           </g>
         ))}
 
-        {/* Draw exactly accurate Topographical Station Markers (hollow white rings) */}
+        {/* Draw all vertices as Stations */}
         {vertices.map((v, i) => (
             <circle 
                 key={i} 
                 cx={v.x} 
                 cy={v.y} 
-                r="6" 
+                r="7" 
                 fill="#101015" 
                 stroke="#FFFFFF" 
-                strokeWidth="3" 
+                strokeWidth="4" 
             />
         ))}
 
-        {/* Draw labels for core stations */}
+        {/* Labels for landmarks */}
         {MAP_DATA.stationLabels.map((lbl, i) => (
             <text 
                 key={i} 
                 x={lbl.x + lbl.dx} 
                 y={lbl.y + lbl.dy} 
                 fill="#EEEEEE" 
-                fontSize="14" 
+                fontSize="20" 
                 fontWeight="bold" 
                 fontFamily="sans-serif"
                 textAnchor={lbl.anchor || "middle"}
@@ -177,7 +229,7 @@ export default function MapVisualizer({ activeEvents, zoomLevel = 1.0 }) {
             </text>
         ))}
 
-        {/* Draw active pulsing stations precisely where trains arrive */}
+        {/* Active Pulses */}
         <AnimatePresence>
           {pulses.map(pulse => {
             const lineData = MAP_DATA.lines[pulse.lineId];
@@ -185,7 +237,7 @@ export default function MapVisualizer({ activeEvents, zoomLevel = 1.0 }) {
             return (
               <motion.g key={pulse.id} transform={`translate(${pulse.x}, ${pulse.y})`}>
                 <motion.circle
-                    r="8"
+                    r="12"
                     fill="#FFF"
                     initial={{ scale: 0.5, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
@@ -193,10 +245,10 @@ export default function MapVisualizer({ activeEvents, zoomLevel = 1.0 }) {
                     transition={{ duration: 0.3 }}
                 />
                 <motion.circle
-                    r="24"
+                    r="40"
                     fill="none"
                     stroke={lineData.color}
-                    strokeWidth="4"
+                    strokeWidth="6"
                     initial={{ scale: 0, opacity: 1 }}
                     animate={{ scale: 2.5, opacity: 0 }}
                     transition={{ duration: 1.5, repeat: 2, ease: "easeOut" }}

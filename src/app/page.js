@@ -5,7 +5,11 @@ import dynamic from 'next/dynamic';
 
 const MapComponent = dynamic(() => import('./MapComponent'), { ssr: false });
 
-import { initAudio, applyWeatherModulation, triggerArrivalPoint, setLineVolume, setScale, getScaleNames } from "@/lib/audioEngine";
+import {
+  initAudio, applyWeatherModulation, triggerArrivalPoint,
+  setLineVolume, setScale, getScaleNames,
+  toggleDrums, setDrumVolume, updateDrumPattern
+} from "@/lib/audioEngine";
 import { motion, AnimatePresence } from "framer-motion";
 
 export default function Home() {
@@ -16,13 +20,13 @@ export default function Home() {
   const [errorMsg, setErrorMsg] = useState('');
   const [selectedScale, setSelectedScale] = useState('C Minor Pentatonic');
   const [totalArrivals, setTotalArrivals] = useState(0);
+  const [drumsOn, setDrumsOn] = useState(false);
 
-  // We no longer track "processed" IDs. Instead, each poll picks the closest
-  // arrivals per line and staggers note triggers across the poll interval.
   const scheduledTimeouts = useRef([]);
   const isPlayingRef = useRef(false);
 
-  const TFL_POLL_MS = 15000;
+  // Faster polling for more real-time feel
+  const TFL_POLL_MS = 5000;
 
   const toggleAudio = async () => {
     if (!isPlaying) {
@@ -37,6 +41,12 @@ export default function Home() {
     const name = e.target.value;
     setSelectedScale(name);
     setScale(name);
+  };
+
+  const handleDrumToggle = () => {
+    const newState = !drumsOn;
+    setDrumsOn(newState);
+    toggleDrums(newState);
   };
 
   const fetchData = async () => {
@@ -59,8 +69,16 @@ export default function Home() {
       if (tData.success) {
         setApiStatus('ok');
         setErrorMsg('');
-        setTotalArrivals(tData.totalArrivals || 0);
+        const total = tData.totalArrivals || 0;
+        setTotalArrivals(total);
         scheduleNotesFromData(tData.data);
+
+        // Update drum pattern with live data density
+        if (weatherData) {
+          updateDrumPattern(total, weatherData.windSpeed, weatherData.humidity);
+        } else {
+          updateDrumPattern(total, 10, 50);
+        }
       } else {
         setApiStatus('error');
         setErrorMsg(tData.error || 'Unknown error');
@@ -73,27 +91,22 @@ export default function Home() {
   };
 
   const scheduleNotesFromData = (arrivalsByLine) => {
-    // Clear any previously scheduled notes
+    // Clear previously scheduled
     scheduledTimeouts.current.forEach(t => clearTimeout(t));
     scheduledTimeouts.current = [];
 
-    const newUIEvents = [];
-
-    // For each line, take the 3 closest arriving trains.
-    // Stagger their note triggers evenly across the 15-second poll interval.
-    // This creates a continuous, rhythmic stream of notes.
     const linesWithArrivals = Object.keys(arrivalsByLine);
     let globalIndex = 0;
 
     linesWithArrivals.forEach(lineId => {
       const arrivals = arrivalsByLine[lineId];
-      // Sort by closest first (should already be sorted by API route)
-      const closest = arrivals.slice(0, 3);
+      // Pick 2 closest trains per line per poll
+      const closest = arrivals.slice(0, 2);
 
       closest.forEach((arrival, i) => {
-        // Spread notes across the polling interval with slight randomness
-        const baseDelay = (globalIndex * 800) + (i * 300); // spread them out
-        const jitter = Math.random() * 500;
+        // Spread evenly across the 5-second window
+        const baseDelay = (globalIndex * 350) + (i * 200);
+        const jitter = Math.random() * 300;
         const delay = baseDelay + jitter;
 
         const timeoutId = setTimeout(() => {
@@ -101,9 +114,8 @@ export default function Home() {
 
           triggerArrivalPoint(lineId, arrival.stationId);
 
-          // Push to UI
           setActiveEvents(prev => [{
-            id: `${lineId}-${arrival.stationId}-${Date.now()}`,
+            id: `${lineId}-${arrival.stationId}-${Date.now()}-${Math.random()}`,
             lineId,
             stationName: arrival.stationName,
             towards: arrival.towards || "",
@@ -128,7 +140,6 @@ export default function Home() {
     };
   }, [isPlaying]);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       isPlayingRef.current = false;
@@ -142,16 +153,12 @@ export default function Home() {
 
       <div className="control-panel">
         <div>
-          <button
-            className={`glow-btn ${isPlaying ? 'active' : ''}`}
-            onClick={toggleAudio}
-          >
+          <button className={`glow-btn ${isPlaying ? 'active' : ''}`} onClick={toggleAudio}>
             {isPlaying ? 'System Active' : 'Start Integration'}
           </button>
           {!isPlaying && <p style={{fontSize:'11px',color:'#889',textAlign:'center'}}>Click to initialize Web Audio</p>}
         </div>
 
-        {/* API Status */}
         {apiStatus === 'error' && (
           <div style={{background:'rgba(220,36,31,0.15)',border:'1px solid rgba(220,36,31,0.4)',borderRadius:'8px',padding:'10px',fontSize:'11px',color:'#ff6b6b'}}>
             <strong>TFL API Error:</strong> {errorMsg}
@@ -159,7 +166,7 @@ export default function Home() {
         )}
         {apiStatus === 'ok' && (
           <div style={{background:'rgba(0,120,42,0.15)',border:'1px solid rgba(0,120,42,0.4)',borderRadius:'8px',padding:'10px',fontSize:'11px',color:'#6bff7b'}}>
-            ✓ TFL Data Streaming ({totalArrivals} predictions)
+            ✓ Streaming ({totalArrivals} trains)
           </div>
         )}
 
@@ -170,7 +177,7 @@ export default function Home() {
               <span className="metric-value">{weatherData.temperature}°C</span>
             </div>
             <div className="metric">
-              <span className="metric-label">Wind → Filter</span>
+              <span className="metric-label">Wind → Filter / Swing</span>
               <span className="metric-value">{weatherData.windSpeed} km/h</span>
             </div>
             <div className="metric">
@@ -181,22 +188,12 @@ export default function Home() {
         )}
 
         {/* Scale Selector */}
-        <div style={{marginTop:'10px'}}>
-          <h4 style={{color:'#fff',fontSize:'13px',borderBottom:'1px solid rgba(255,255,255,0.1)',paddingBottom:'8px',margin:'0 0 12px 0'}}>Musical Scale</h4>
-          <select 
-            value={selectedScale} 
+        <div>
+          <h4 style={{color:'#fff',fontSize:'13px',borderBottom:'1px solid rgba(255,255,255,0.1)',paddingBottom:'8px',margin:'0 0 10px 0'}}>Musical Scale</h4>
+          <select
+            value={selectedScale}
             onChange={handleScaleChange}
-            style={{
-              width:'100%',
-              padding:'8px 12px',
-              background:'rgba(255,255,255,0.08)',
-              color:'#fff',
-              border:'1px solid rgba(255,255,255,0.15)',
-              borderRadius:'6px',
-              fontSize:'13px',
-              cursor:'pointer',
-              outline:'none',
-            }}
+            style={{width:'100%',padding:'8px 12px',background:'rgba(255,255,255,0.08)',color:'#fff',border:'1px solid rgba(255,255,255,0.15)',borderRadius:'6px',fontSize:'13px',cursor:'pointer',outline:'none'}}
           >
             {getScaleNames().map(name => (
               <option key={name} value={name} style={{background:'#1a1a2e',color:'#fff'}}>{name}</option>
@@ -204,15 +201,48 @@ export default function Home() {
           </select>
         </div>
 
+        {/* Drum Machine */}
+        <div>
+          <h4 style={{color:'#fff',fontSize:'13px',borderBottom:'1px solid rgba(255,255,255,0.1)',paddingBottom:'8px',margin:'0 0 10px 0'}}>Drum Machine</h4>
+          <div style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'10px'}}>
+            <button
+              onClick={handleDrumToggle}
+              style={{
+                padding:'6px 16px',
+                borderRadius:'6px',
+                border: drumsOn ? '1px solid #FFD329' : '1px solid rgba(255,255,255,0.15)',
+                background: drumsOn ? 'rgba(255,211,41,0.15)' : 'rgba(255,255,255,0.05)',
+                color: drumsOn ? '#FFD329' : '#889',
+                cursor:'pointer',
+                fontSize:'12px',
+                fontWeight:600,
+                transition:'all 0.3s ease',
+              }}
+            >
+              {drumsOn ? '● Drums On' : '○ Drums Off'}
+            </button>
+          </div>
+          <div style={{display:'flex',alignItems:'center',fontSize:'11px'}}>
+            <span style={{width:'60px',color:'#889'}}>Volume</span>
+            <input
+              type="range" min="-30" max="0" defaultValue="-6"
+              onChange={(e) => setDrumVolume(parseFloat(e.target.value))}
+              style={{flex:1,accentColor:'#FFD329'}}
+            />
+          </div>
+          <p style={{fontSize:'10px',color:'#556',marginTop:'8px',lineHeight:'1.4'}}>
+            Pattern density: {totalArrivals} active trains<br/>
+            {weatherData && <>Swing: {weatherData.windSpeed} km/h wind</>}
+          </p>
+        </div>
+
         {/* Line Volumes */}
-        <div style={{marginTop:'10px'}}>
-          <h4 style={{color:'#fff',fontSize:'13px',borderBottom:'1px solid rgba(255,255,255,0.1)',paddingBottom:'8px',margin:'0 0 12px 0'}}>Line Volumes</h4>
+        <div>
+          <h4 style={{color:'#fff',fontSize:'13px',borderBottom:'1px solid rgba(255,255,255,0.1)',paddingBottom:'8px',margin:'0 0 10px 0'}}>Line Volumes</h4>
           {['victoria','jubilee','northern','piccadilly','central','bakerloo','district','circle','metropolitan','hammersmith-city'].map(line => (
-            <div key={line} style={{display:'flex',alignItems:'center',marginBottom:'6px',fontSize:'11px'}}>
+            <div key={line} style={{display:'flex',alignItems:'center',marginBottom:'5px',fontSize:'11px'}}>
               <span style={{width:'70px',color:`var(--${line})`,textTransform:'capitalize',fontSize:'10px'}}>{line.replace('-',' ')}</span>
-              <input
-                type="range"
-                min="-60" max="0" defaultValue="-10"
+              <input type="range" min="-60" max="0" defaultValue="-10"
                 onChange={(e) => setLineVolume(line, parseFloat(e.target.value))}
                 style={{flex:1,accentColor:`var(--${line})`}}
               />
@@ -221,34 +251,24 @@ export default function Home() {
         </div>
 
         {/* Live Events Feed */}
-        <div style={{marginTop:'10px'}}>
-          <h4 style={{color:'#fff',fontSize:'13px',borderBottom:'1px solid rgba(255,255,255,0.1)',paddingBottom:'8px',margin:'0 0 12px 0'}}>Live Events</h4>
-          <div style={{display:'flex',flexDirection:'column',gap:'4px',maxHeight:'150px',overflowY:'auto'}}>
+        <div>
+          <h4 style={{color:'#fff',fontSize:'13px',borderBottom:'1px solid rgba(255,255,255,0.1)',paddingBottom:'8px',margin:'0 0 10px 0'}}>Live Events</h4>
+          <div style={{display:'flex',flexDirection:'column',gap:'3px',maxHeight:'120px',overflowY:'auto'}}>
             <AnimatePresence>
               {activeEvents.map(ev => (
-                <motion.div
-                  key={ev.id}
-                  initial={{opacity:0,x:20}}
-                  animate={{opacity:1,x:0}}
-                  exit={{opacity:0}}
-                  style={{
-                    fontSize:'10px',
-                    background:'rgba(255,255,255,0.05)',
-                    padding:'6px 8px',
-                    borderRadius:'6px',
-                    borderLeft:`3px solid var(--${ev.lineId})`
-                  }}
+                <motion.div key={ev.id} initial={{opacity:0,x:20}} animate={{opacity:1,x:0}} exit={{opacity:0}}
+                  style={{fontSize:'10px',background:'rgba(255,255,255,0.05)',padding:'5px 8px',borderRadius:'4px',borderLeft:`3px solid var(--${ev.lineId})`}}
                 >
                   <strong style={{color:`var(--${ev.lineId})`,textTransform:'capitalize'}}>
                     {ev.lineId.replace('-',' ')}
                   </strong>
                   <span style={{color:'#eee',marginLeft:'6px'}}>{ev.stationName}</span>
-                  <span style={{color:'#889',marginLeft:'6px'}}>{Math.round(ev.timeToStation)}s</span>
+                  <span style={{color:'#667',marginLeft:'6px'}}>{Math.round(ev.timeToStation)}s</span>
                 </motion.div>
               ))}
             </AnimatePresence>
             {activeEvents.length === 0 && isPlaying && apiStatus !== 'error' && (
-              <span style={{fontSize:'12px',color:'#889'}}>Waiting for train events...</span>
+              <span style={{fontSize:'12px',color:'#889'}}>Waiting for events...</span>
             )}
           </div>
         </div>
